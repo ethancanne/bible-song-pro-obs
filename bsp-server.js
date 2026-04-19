@@ -265,7 +265,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (urlPath === '/' || urlPath === '') urlPath = '/BSP_display.html';
+  if (urlPath === '/panel') urlPath = '/Bible Song Pro panel.html';
 
   // Prevent directory-traversal attacks
   const filePath = path.resolve(ROOT, '.' + urlPath);
@@ -292,6 +292,7 @@ a:hover{background:#6366f1;}</style></head>
 <p>Open a display on this or any computer connected to the same network:</p>
 <a href="/BSP_display.html">🖥 Display 1 — BSP_display.html</a>
 <a href="/BSP_display2.html">🖥 Display 2 — BSP_display2.html</a>
+<a href="/panel" style="background:#059669;">🎛 Control Panel — Bible Song Pro panel.html</a>
 <p style="margin-top:20px;font-size:0.85em;color:#666;">Serving from: ${ROOT}<br>LAN IP: ${ip}:${port}</p>
 </div></body></html>`);
       return;

@@ -2,130 +2,49 @@
 
 A modern church presentation system for OBS Studio that lets you display Bible verses and song lyrics in real-time.
 
----
-
-## Preview
-
-![Preview](assets/showcase/rendered/interface-01-card.png)
-![Lowerthird Mode](assets/showcase/rendered/lowerthird-card.png)
-![Auto Retrieve Lyrics](assets/showcase/rendered/auto-lyrics-02-card.png)
-![Languages Preview](assets/showcase/rendered/languages-card.png)
-
----
-
-## Get Started
-
-👉 Download the latest version: [Download Here](https://github.com/Johnbatey/bible-song-pro-obs/releases/latest)
-
-👉 Watch demo: [YouTube Demo](https://www.youtube.com/watch?v=4SVs5jyYx3o)
+**Originally created by Johnson Olakotan. Modified and improved by Ethan Cannelongo.**
 
 ---
 
 ## Features
 
-- Real-time Bible verse display
-- Auto-Retrieve Lyrics
-- Real-time song lyrics presentation
-- Clean broadcast-style UI
-- Fully customizable display
-- Lightweight and fast
-- Works directly inside OBS Browser Source
+- **Real-time Bible verse display** & **Auto-Retrieve Lyrics**
+- **Dual Display Support:** Independently control Display 1 for main outputs and Display 2 with custom transitions and text layouts perfectly tuned for a secondary destination.
+- **LAN Remote Control:** Connect safely across the network using the built-in Node server. You can control the slides directly from any computer or tablet on your local area network (LAN)! 
+- **Remote Synchronization:** Have multiple operators in the production room? No problem. State stays globally unified across the network — one operator's UI correctly mirrors another operator's live projection state dynamically in real-time.
+- **Highly Customizable:** Edit background styles, typography, and positioning live.
+- Works perfectly as an internal OBS Browser Source Dock or in an external web browser!
 
 ---
 
-## Setup (2 Minutes)
+## Setup (Network Mode)
 
-1. Open OBS Studio
-2. Add `BSP_display.html` as a Browser Source in your scene
-3. Add `Bible Song Pro panel.html` as an OBS custom browser dock
-4. Open the panel and start controlling your live display
+1. Open your terminal and run `START_LAN_SERVER.command` (MacOS). 
+2. Open your preferred browser. Navigate to the IP and port shown in the terminal (e.g. `http://YOUR_LAN_IP:5511`).
+3. Access the Control Panel via the browser
+4. Enable Network Broadcast in the settings
+5. Embed the display links as Browser Sources in your production application (e.g. OBS, vMix).
 
 ---
 
 ## How It Works
 
-- `Bible Song Pro panel.html` -> Control interface
-- `BSP_display.html` -> OBS output screen
-- Real-time sync via `BroadcastChannel` API
-
----
-
-## Built for Churches
-
-Bible Song Pro is designed to help churches and ministries present scripture and song lyrics beautifully during live streams without complex software.
-
----
-
-## Demo
-
-Watch it in action:  
-[https://www.youtube.com/watch?v=4SVs5jyYx3o](https://www.youtube.com/watch?v=4SVs5jyYx3o)
-
----
-
-## Download
-
-Get the latest version here:  
-[https://github.com/Johnbatey/bible-song-pro-obs/releases/latest](https://github.com/Johnbatey/bible-song-pro-obs/releases/latest)
-
-<a href="https://github.com/Johnbatey/bible-song-pro-obs/releases/latest">
-  <img src="assets/download-button.svg" alt="Download Bible Song Pro" height="132">
-</a>
+- `Bible Song Pro panel.html` -> Control interface and dashboard
+- `BSP_display.html` -> Primary presentation output screen
+- `BSP_display2.html` -> Secondary presentation output screen
+- Real-time zero-latency sync via `BroadcastChannel` API locally, or WebSocket relay for Local Area Networks.
 
 ---
 
 ## Tech Stack
 
-- HTML, CSS, JavaScript
+- HTML, Vanilla CSS, JavaScript
 - `BroadcastChannel` API
+- Node.js (WebSockets)
 - OBS Browser Source
 
 ---
 
 ## Support
 
-- Instagram: `https://www.instagram.com/johnsonolakotan`
-- [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support-orange?style=for-the-badge)](https://buymeacoffee.com/johnsonolakotan)
-
----
-
-## Feedback Backend
-
-To let the in-app Feedback form create GitHub issues directly, run the bundled backend:
-
-1. Set environment variables:
-   - `GITHUB_TOKEN` = a GitHub token with issue write access
-   - `GITHUB_REPO` = `Johnbatey/bible-song-pro-obs` (or another `owner/repo`)
-   - Optional: `FEEDBACK_PORT` = backend port, default `8787`
-2. Start the server:
-   - `npm run feedback:server`
-3. Start the app and use the Feedback tab. The public build uses the bundled default feedback endpoint automatically.
-
-Health check:
-- `http://127.0.0.1:8787/health`
-
-The backend keeps the GitHub token on the server side and returns the created issue URL to the app.
-
----
-
-## Feedback Worker
-
-For public deployment without keeping your PC running, use the Cloudflare Worker in [feedback-worker](feedback-worker).
-
-Quick path:
-
-1. `cd feedback-worker`
-2. `npm install`
-3. `npx wrangler login`
-4. `npx wrangler secret put GITHUB_TOKEN`
-5. `npm run deploy`
-6. If you change the deployed Worker in future, update the default feedback endpoint in the panel source.
-   - Current deployed Worker: `https://bible-song-pro-feedback.johnbatey-bsp.workers.dev/api/github-feedback`
-
-The Worker setup is documented in [feedback-worker/README.md](feedback-worker/README.md).
-
----
-
-## License
-
-GPL-3.0. See [LICENSE](LICENSE) for full terms.
+- Original GitHub repo: `https://github.com/Johnbatey/bible-song-pro-obs`

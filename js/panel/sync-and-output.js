@@ -70,6 +70,7 @@
         type: 'SYNC_STATE',
         proto: 1,
         sender: 'control',
+        clientId: relayClientId,
         ts: Date.now(),
         seq: nextSeq(),
         state
@@ -282,7 +283,54 @@
       }
       if (d.type === 'STATE_PUSH') {
         handleRelayStatePush(d);
+        return;
       }
+      if (d.type === 'UPDATE' && d.sender === 'control' && d.clientId && d.clientId !== relayClientId) {
+        if (d.panelState) applyNetworkPanelState(d.panelState);
+        return;
+      }
+      if (d.type === 'CLEAR' && d.sender === 'control' && d.clientId && d.clientId !== relayClientId) {
+        if (isApplyingRemoteState) return;
+        isApplyingRemoteState = true;
+        isLive = false;
+        if (typeof updateButtonView === 'function') updateButtonView();
+        isApplyingRemoteState = false;
+        return;
+      }
+    }
+
+    function applyNetworkPanelState(state) {
+      if (isApplyingRemoteState) return;
+      isApplyingRemoteState = true;
+      
+      if (state.livePointer !== undefined) livePointer = state.livePointer;
+      if (state.liveLineCursor !== undefined) liveLineCursor = state.liveLineCursor;
+      if (state.isLive !== undefined) isLive = state.isLive;
+      if (state.liveKind !== undefined) liveKind = state.liveKind;
+      
+      // Keep UI tabs synced so that it feels like 1 unified interface
+      if (state.sidebarTab !== undefined && typeof setSidebarTab === 'function') {
+        sidebarTab = state.sidebarTab;
+        if (typeof buttonContextTab !== 'undefined') {
+            buttonContextTab = state.sidebarTab;
+        }
+        setSidebarTab(sidebarTab);
+      }
+      
+      if (state.livePointer && state.livePointer.index !== undefined && typeof selectItem === 'function') {
+          if (state.livePointer.source === 'schedule') {
+              buttonContextTab = 'schedule';
+          } else if (state.livePointer.kind === 'bible') {
+              buttonContextTab = 'bible';
+          } else {
+              buttonContextTab = 'songs';
+          }
+          selectItem(state.livePointer.index, { skipButtonView: true, preserveLineCursor: false });
+      }
+      
+      if (typeof updateButtonView === 'function') updateButtonView();
+      
+      isApplyingRemoteState = false;
     }
 
     function broadcastMessage(msg) {
@@ -342,6 +390,14 @@
         sceneLayers: getOutputSceneLayers(),
         displayViewportWidth: viewport.width,
         displayViewportHeight: viewport.height,
+        clientId: relayClientId,
+        panelState: {
+          livePointer,
+          liveLineCursor,
+          isLive,
+          liveKind,
+          sidebarTab
+        },
         ...payload
       };
       broadcastMessage(msg);
@@ -369,7 +425,8 @@
         sender: 'control',
         ts: Date.now(),
         seq: nextSeq(),
-        sceneLayers: getOutputSceneLayers()
+        sceneLayers: getOutputSceneLayers(),
+        clientId: relayClientId
       };
       if (opts.transitionDuration != null) msg.transitionDuration = opts.transitionDuration;
       if (opts.fade != null) msg.fade = !!opts.fade;

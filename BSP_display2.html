@@ -916,11 +916,14 @@
       console.log('Bible Song Pro Display initialized');
     }
     
+    let clientSeqMap = {};
     // Handle incoming messages
-    function acceptSeq(seq) {
+    function acceptSeq(seq, clientId) {
       if (!seq) return true;
-      if (seq <= lastSeq) return false;
-      lastSeq = seq;
+      const key = clientId || 'default';
+      const last = clientSeqMap[key] || 0;
+      if (seq <= last) return false;
+      clientSeqMap[key] = seq;
       return true;
     }
 
@@ -1053,19 +1056,20 @@
           }
           case 'CLEAR':
             hasSynced = true;
-            if (acceptSeq(d.seq)) clearDisplay({ fade: d.fade !== false, duration: d.transitionDuration });
+            if (acceptSeq(d.seq, d.clientId)) clearDisplay({ fade: d.fade !== false, duration: d.transitionDuration });
             break;
           case 'UPDATE':
             hasSynced = true;
-            if (!acceptSeq(d.seq)) return;
+            if (!acceptSeq(d.seq, d.clientId)) return;
             applyUpdateWithThrottle(d);
             break;
           case 'SYNC_STATE': {
             const state = d.state || {};
             const payload = state.payload || null;
             const seq = payload && payload.seq ? payload.seq : d.seq;
+            const clientId = payload && payload.clientId ? payload.clientId : d.clientId;
             hasSynced = true;
-            if (!acceptSeq(seq)) return;
+            if (!acceptSeq(seq, clientId)) return;
             if (state.kind === 'clear') {
               clearDisplay();
             } else if (state.kind === 'update' && payload) {
