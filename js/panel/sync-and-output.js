@@ -90,6 +90,7 @@
     }
 
     function queueRelayStatePush(opts = {}) {
+      if (typeof isNetworkHosted !== 'undefined' && isNetworkHosted) return;
       if (isRestoringBackup || isApplyingRemoteState || !stateReady) return;
       if (opts.includeSongs) relayStateIncludeSongs = true;
       if (opts.includeBibles) relayStateIncludeBibles = true;
@@ -104,6 +105,7 @@
     }
 
     function sendRelayStatePush({ includeSongs = false, includeBibles = false, bumpUpdatedAt = true } = {}) {
+      if (typeof isNetworkHosted !== 'undefined' && isNetworkHosted) return false;
       if (!relaySocket || relaySocket.readyState !== WebSocket.OPEN) return false;
       if (isRestoringBackup || isApplyingRemoteState || !stateReady) return false;
       syncAppStateFromUi();
@@ -134,6 +136,7 @@
     }
 
     function requestRelayState() {
+      if (typeof isNetworkHosted !== 'undefined' && isNetworkHosted) return;
       if (!stateReady || isRestoringBackup) {
         relayStateRequestPending = true;
         return;
@@ -165,6 +168,7 @@
     }
 
     function handleRelayStateRequest(d) {
+      if (typeof isNetworkHosted !== 'undefined' && isNetworkHosted) return;
       if (!d || d.sender !== 'control') return;
       if (d.clientId && d.clientId === relayClientId) return;
       if (!stateReady || isRestoringBackup || isApplyingRemoteState) return;
@@ -184,6 +188,7 @@
     }
 
     function handleRelayStatePush(d) {
+      if (typeof isNetworkHosted !== 'undefined' && isNetworkHosted) return;
       if (!d || d.sender !== 'control') return;
       if (d.clientId && d.clientId === relayClientId) return;
       if (!stateReady || isRestoringBackup) {
@@ -230,6 +235,7 @@
         bibleRecords = Object.keys(bibles).map(name => buildBibleRecord(name, bibles[name] || [], { isNew: false }));
       }
       applyLoadedState(stateValue, songRecords, bibleRecords, { runInit: false, stateUpdatedAt: payload.stateUpdatedAt || 0 });
+      window.__isApplyingRemoteDb = true;
       saveState();
       const tasks = [];
       if (stateValue) {
@@ -249,6 +255,7 @@
         } else if (!appStateUpdatedAt) {
           appStateUpdatedAt = Date.now();
         }
+        window.__isApplyingRemoteDb = false;
       });
     }
 
@@ -295,6 +302,28 @@
         isLive = false;
         if (typeof updateButtonView === 'function') updateButtonView();
         isApplyingRemoteState = false;
+        return;
+      }
+      if (d.type === 'DB_UPDATED') {
+        if (d.senderId && typeof relayClientId !== 'undefined' && d.senderId === relayClientId) {
+          // This update was initiated by us, no need to reload the UI
+          return;
+        }
+        clearTimeout(window.__dbUpdateTimer);
+        window.__dbUpdateTimer = setTimeout(() => {
+          console.log('[Sync] Received DB_UPDATED, reloading state...');
+          window.__isApplyingRemoteDb = true;
+          if (typeof bootApp === 'function') {
+            bootApp().then(() => {
+              window.__isApplyingRemoteDb = false;
+            }).catch(e => {
+              console.error('[Sync] Reload after DB_UPDATED failed', e);
+              window.__isApplyingRemoteDb = false;
+            });
+          } else {
+            window.__isApplyingRemoteDb = false;
+          }
+        }, 300);
         return;
       }
     }

@@ -63,6 +63,41 @@ function getMime(filePath) {
   return MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
 }
 
+// ─── Simple JSON Database ───────────────────────────────────────────────────
+const DB_FILE = path.join(ROOT, 'bsp-database.json');
+let dbCache = { songs: [], bibles: [], state: [] };
+
+try {
+  if (fs.existsSync(DB_FILE)) {
+    dbCache = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    console.log(`[DB] Loaded existing database with ${dbCache.songs?.length || 0} songs and ${dbCache.bibles?.length || 0} bibles.`);
+  }
+} catch (e) {
+  console.log('[DB] Could not parse existing database, starting fresh.');
+}
+
+let dbSaveTimer = null;
+function scheduleDbSave() {
+  clearTimeout(dbSaveTimer);
+  dbSaveTimer = setTimeout(() => {
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(dbCache), 'utf8');
+      console.log(`[DB] Saved database to disk at ${new Date().toLocaleTimeString()}`);
+    } catch (e) {
+      console.error('[DB] Failed to save database to disk:', e);
+    }
+  }, 1500); // 1.5s debounce
+}
+
+// Helper to reliably read POST/PUT body
+function getReqBody(req) {
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => resolve(body));
+  });
+}
+
 // ─── LAN IP detection ───────────────────────────────────────────────────────
 function getLanIps() {
   const ifaces = os.networkInterfaces();
@@ -171,6 +206,11 @@ function broadcast(rawJson, senderSocket) {
   }
 }
 
+/** Broadcast to all clients that a DB store has updated */
+function broadcastDbUpdate(storeName, senderId) {
+  broadcast(JSON.stringify({ type: 'DB_UPDATED', store: storeName, ts: Date.now(), senderId: senderId || '' }), null);
+}
+
 /** Register a newly-upgraded WebSocket socket and wire up frame handling. */
 function addClient(socket) {
   clients.add(socket);
@@ -263,6 +303,116 @@ const server = http.createServer((req, res) => {
     });
     res.end(body);
     return;
+  }
+
+  // ── /api/db/* — Simple JSON Persistence API for Panel Customizations ──
+  if (urlPath.startsWith('/api/db/')) {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      });
+      return res.end();
+    }
+
+    const parts = urlPath.split('/').filter(Boolean); // ['api', 'db', storeName, key?]
+    const storeName = parts[2];
+    const key = parts[3];
+
+    // Ensure store exists in cache
+    if (storeName && !dbCache[storeName]) dbCache[storeName] = [];
+    const store = dbCache[storeName];
+
+    if (!store) {
+      res.writeHead(404); return res.end('Store Not Found');
+    }
+
+    // GET /api/db/:storeName (return all elements)
+    if (req.method === 'GET' && !key) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify(store));
+    }
+
+    // GET /api/db/:storeName/:key (return single element)
+    if (req.method === 'GET' && key) {
+      const idField = storeName === 'state' ? 'key' : 'id';
+      const item = store.find(i => i[idField] === key) || null;
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify(item));
+    }
+
+    // DELETE /api/db/:storeName/:key
+    if (req.method === 'DELETE' && key) {
+      const idField = storeName === 'state' ? 'key' : 'id';
+      dbCache[storeName] = store.filter(i => i[idField] !== key);
+      scheduleDbSave();
+      broadcastDbUpdate(storeName);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ success: true }));
+    }
+
+    // POST /api/db/:storeName/clear
+    if (req.method === 'POST' && key === 'clear') {
+      dbCache[storeName] = [];
+      scheduleDbSave();
+      broadcastDbUpdate(storeName);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ success: true }));
+    }
+
+    // POST /api/db/:storeName/putMany
+    if (req.method === 'POST' && key === 'putMany') {
+      getReqBody(req).then(body => {
+        try {
+          const items = JSON.parse(body);
+          if (Array.isArray(items)) {
+            const idField = storeName === 'state' ? 'key' : 'id';
+            items.forEach(item => {
+              if (!item || !item[idField]) return;
+              const idx = store.findIndex(i => i[idField] === item[idField]);
+              if (idx >= 0) store[idx] = item;
+              else store.push(item);
+            });
+            scheduleDbSave();
+            broadcastDbUpdate(storeName);
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+            return res.end(JSON.stringify({ success: true }));
+          }
+        } catch (e) {
+          res.writeHead(400, { 'Access-Control-Allow-Origin': '*' }); return res.end('Invalid JSON');
+        }
+      });
+      return;
+    }
+
+    // PUT /api/db/:storeName
+    if (req.method === 'PUT') {
+      const clientId = new URLSearchParams(req.url.split('?')[1] || '').get('clientId') || '';
+      getReqBody(req).then(body => {
+        try {
+          const item = JSON.parse(body);
+          const idField = storeName === 'state' ? 'key' : 'id';
+          if (!item || !item[idField]) {
+            res.writeHead(400, { 'Access-Control-Allow-Origin': '*' }); return res.end('Missing item identifier');
+          }
+          const idx = store.findIndex(i => i[idField] === item[idField]);
+          if (idx >= 0) store[idx] = item;
+          else store.push(item);
+          scheduleDbSave();
+          broadcastDbUpdate(storeName, clientId);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: true }));
+        } catch (e) {
+          res.writeHead(400, { 'Access-Control-Allow-Origin': '*' }); return res.end('Invalid JSON');
+        }
+      });
+      return;
+    }
+
+    // Unhandled API method
+    res.writeHead(405, { 'Access-Control-Allow-Origin': '*' });
+    return res.end('Method Not Allowed');
   }
 
   if (urlPath === '/panel') urlPath = '/Bible Song Pro panel.html';

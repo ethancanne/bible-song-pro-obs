@@ -22,7 +22,31 @@
       return dbPromise;
     }
 
+    const isNetworkHosted = window.location.protocol.startsWith('http');
+
+    async function serverFetch(method, path, body) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' }, cache: 'no-store' };
+      if (body) opts.body = JSON.stringify(body);
+      const uClientId = typeof relayClientId !== 'undefined' ? relayClientId : '';
+      const qs = uClientId ? `?clientId=${encodeURIComponent(uClientId)}` : '';
+      const sep = path.includes('?') ? '&' : '?';
+      const url = qs ? `/api/db${path}${qs.replace('?', sep)}` : `/api/db${path}`;
+      const res = await fetch(url, opts);
+      if (!res.ok) throw new Error('Server API error');
+      return await res.json();
+    }
+
     function idbGet(storeName, key) {
+      if (isNetworkHosted) {
+        return serverFetch('GET', `/${storeName}/${key}`).catch(err => {
+          console.warn('[DB API] idbGet failed, falling back to IndexedDB', err);
+          return idbGetFallback(storeName, key);
+        });
+      }
+      return idbGetFallback(storeName, key);
+    }
+
+    function idbGetFallback(storeName, key) {
       return openDb().then(db => new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readonly');
         const store = tx.objectStore(storeName);
@@ -33,6 +57,16 @@
     }
 
     function idbGetAll(storeName) {
+      if (isNetworkHosted) {
+        return serverFetch('GET', `/${storeName}`).catch(err => {
+          console.warn('[DB API] idbGetAll failed, falling back to IndexedDB', err);
+          return idbGetAllFallback(storeName);
+        });
+      }
+      return idbGetAllFallback(storeName);
+    }
+
+    function idbGetAllFallback(storeName) {
       return openDb().then(db => new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readonly');
         const store = tx.objectStore(storeName);
@@ -45,6 +79,19 @@
     function idbPut(storeName, value) {
       if (storeName === STORE_SONGS) queueRelayStatePush({ includeSongs: true });
       if (storeName === STORE_BIBLES) queueRelayStatePush({ includeBibles: true });
+
+      if (isNetworkHosted && !window.__isApplyingRemoteDb) {
+        return serverFetch('PUT', `/${storeName}`, value)
+          .then(() => idbPutFallback(storeName, value)) // Also save locally as a backup
+          .catch(err => {
+            console.warn('[DB API] idbPut failed, falling back to IndexedDB', err);
+            return idbPutFallback(storeName, value);
+          });
+      }
+      return idbPutFallback(storeName, value);
+    }
+
+    function idbPutFallback(storeName, value) {
       return openDb().then(db => new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
@@ -56,6 +103,18 @@
     }
 
     function idbDelete(storeName, key) {
+      if (isNetworkHosted && !window.__isApplyingRemoteDb) {
+        return serverFetch('DELETE', `/${storeName}/${key}`)
+          .then(() => idbDeleteFallback(storeName, key))
+          .catch(err => {
+            console.warn('[DB API] idbDelete failed, falling back to IndexedDB', err);
+            return idbDeleteFallback(storeName, key);
+          });
+      }
+      return idbDeleteFallback(storeName, key);
+    }
+
+    function idbDeleteFallback(storeName, key) {
       return openDb().then(db => new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
@@ -75,6 +134,19 @@
       if (!items.length) return Promise.resolve(true);
       if (storeName === STORE_SONGS) queueRelayStatePush({ includeSongs: true });
       if (storeName === STORE_BIBLES) queueRelayStatePush({ includeBibles: true });
+
+      if (isNetworkHosted && !window.__isApplyingRemoteDb) {
+        return serverFetch('POST', `/${storeName}/putMany`, items)
+          .then(() => dbPutManyFallback(storeName, items))
+          .catch(err => {
+            console.warn('[DB API] dbPutMany failed, falling back to IndexedDB', err);
+            return dbPutManyFallback(storeName, items);
+          });
+      }
+      return dbPutManyFallback(storeName, items);
+    }
+
+    function dbPutManyFallback(storeName, items) {
       return openDb().then(db => new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
@@ -88,6 +160,19 @@
     function dbClearStore(storeName) {
       if (storeName === STORE_SONGS) queueRelayStatePush({ includeSongs: true });
       if (storeName === STORE_BIBLES) queueRelayStatePush({ includeBibles: true });
+
+      if (isNetworkHosted && !window.__isApplyingRemoteDb) {
+        return serverFetch('POST', `/${storeName}/clear`)
+          .then(() => dbClearStoreFallback(storeName))
+          .catch(err => {
+            console.warn('[DB API] dbClearStore failed, falling back to IndexedDB', err);
+            return dbClearStoreFallback(storeName);
+          });
+      }
+      return dbClearStoreFallback(storeName);
+    }
+
+    function dbClearStoreFallback(storeName) {
       return openDb().then(db => new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
@@ -380,6 +465,7 @@
     }
 
     function schedulePersistAppState() {
+      if (window.__isApplyingRemoteDb || (typeof isApplyingRemoteState !== 'undefined' && isApplyingRemoteState)) return;
       if (!stateReady || isRestoringBackup) {
         pendingPersist = true;
         return;
@@ -482,6 +568,7 @@
     }
 
     function schedulePersistAnimation() {
+      if (window.__isApplyingRemoteDb || (typeof isApplyingRemoteState !== 'undefined' && isApplyingRemoteState)) return;
       if (!stateReady || isRestoringBackup) {
         pendingAnimationPersist = true;
         return;
@@ -546,6 +633,7 @@
     }
 
     function schedulePersistTypography() {
+      if (window.__isApplyingRemoteDb || (typeof isApplyingRemoteState !== 'undefined' && isApplyingRemoteState)) return;
       if (!stateReady || isRestoringBackup) {
         pendingTypographyPersist = true;
         return;

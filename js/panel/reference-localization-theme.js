@@ -7786,6 +7786,7 @@ isiSembulo
     }
 
     function schedulePersistModeSettings() {
+      if (window.__isApplyingRemoteDb || (typeof isApplyingRemoteState !== 'undefined' && isApplyingRemoteState)) return;
       if (!stateReady || isRestoringBackup) {
         pendingModePersist = true;
         return;
@@ -7808,6 +7809,7 @@ isiSembulo
     }
 
     function schedulePersistBackground() {
+      if (window.__isApplyingRemoteDb || (typeof isApplyingRemoteState !== 'undefined' && isApplyingRemoteState)) return;
       if (!stateReady || isRestoringBackup) {
         pendingBgPersist = true;
         return;
