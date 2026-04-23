@@ -735,3 +735,31 @@
       window.prompt('RemoteShow URL', url);
     }
 
+    /**
+     * Automatically enables the network broadcast if the panel is being accessed
+     * over the network (e.g., via http://192.168.1.169:5511/panel) rather than 
+     * from a local file or localhost.
+     */
+    function autoEnableNetworkBroadcastIfServer() {
+      const hostname = window.location.hostname;
+      const protocol = window.location.protocol;
+      
+      // If served via HTTP/HTTPS and not on localhost/127.0.0.1, it's likely server access
+      if (protocol !== 'file:' && !isLocalhostHost(hostname)) {
+        const toggle = document.getElementById('remote-show-toggle');
+        if (toggle && !toggle.checked) {
+          toggle.checked = true;
+          // Trigger the handler to start the relay connection
+          handleRemoteShowHostMode();
+          console.log('[RemoteShow] Auto-enabled Network Broadcast based on server access');
+        }
+      }
+    }
+
+    // Run auto-enable check on script load
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', autoEnableNetworkBroadcastIfServer);
+    } else {
+      autoEnableNetworkBroadcastIfServer();
+    }
+
