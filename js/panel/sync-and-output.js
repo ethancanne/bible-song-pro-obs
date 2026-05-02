@@ -27,6 +27,15 @@
 
     function mirrorSyncMessage(msg) {
       if (!msg || (msg.type !== 'UPDATE' && msg.type !== 'CLEAR' && msg.type !== 'SYNC_STATE')) return;
+      
+      try {
+        localStorage.setItem('bsp_sync_message', JSON.stringify({
+          ts: Date.now(),
+          seq: Number(msg.seq || 0),
+          msg
+        }));
+      } catch (err) {}
+
       openSyncMirrorDb().then(db => new Promise((resolve, reject) => {
         try {
           const tx = db.transaction(SYNC_MIRROR_STORE, 'readwrite');
@@ -394,17 +403,12 @@
 
     function scheduleLiveUpdate() {
       if (isRestoringBackup) return;
-      if (rafPending) return;
-      rafPending = true;
-      requestAnimationFrame(() => {
-        rafPending = false;
-        if (!isLive || !livePointer) return;
-        if (pushLiveUpdate()) return;
-        // If tab/context switches made the pointer stale, recover from loaded Bible item.
-        if (livePointer.kind === 'bible' && recoverLiveBiblePointerFromCurrentItem()) {
-          pushLiveUpdate();
-        }
-      });
+      if (!isLive || !livePointer) return;
+      if (pushLiveUpdate()) return;
+      // If tab/context switches made the pointer stale, recover from loaded Bible item.
+      if (livePointer.kind === 'bible' && recoverLiveBiblePointerFromCurrentItem()) {
+        pushLiveUpdate();
+      }
     }
 
     function postUpdate(payload) {

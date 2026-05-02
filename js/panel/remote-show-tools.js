@@ -510,9 +510,9 @@
       return payload;
     }
 
-    function relaySend(msg) {
-      if (!relaySocket || relaySocket.readyState !== WebSocket.OPEN) return false;
-      if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return false;
+    let relayMessageQueue = [];
+
+    function sendRelayEnvelope(msg) {
       const envelope = {
         type: 'RS_ENVELOPE',
         version: REMOTE_SHOW_PROTOCOL_VERSION,
@@ -529,6 +529,25 @@
         remoteShowLog('send_error', e && e.message ? e.message : 'send failed');
         return false;
       }
+    }
+
+    function relaySend(msg) {
+      if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return false;
+      
+      const isOpen = relaySocket && relaySocket.readyState === WebSocket.OPEN;
+      if (!isOpen) {
+        if (msg.type === 'UPDATE' || msg.type === 'CLEAR') {
+          relayMessageQueue = relayMessageQueue.filter(m => m.type !== 'UPDATE' && m.type !== 'CLEAR');
+          relayMessageQueue.push(msg);
+        }
+        return false;
+      }
+      
+      while (relayMessageQueue.length > 0) {
+        sendRelayEnvelope(relayMessageQueue.shift());
+      }
+      
+      return sendRelayEnvelope(msg);
     }
 
     function sendRemoteShowHeartbeat() {

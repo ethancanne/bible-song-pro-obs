@@ -517,6 +517,14 @@
       to { opacity: 1; }
     }
     
+    @keyframes fakeCut {
+      from { opacity: 0.99; }
+      to { opacity: 1; }
+    }
+    .anim-cut {
+      animation-name: fakeCut;
+    }
+    
     @keyframes zoomIn {
       from { 
         opacity: 0;
@@ -677,7 +685,7 @@
     let relayBackoff = 1500;
     let syncMirrorDbPromise = null;
     let syncMirrorPollTimer = null;
-    let lastMirrorSeq = 0;
+    let lastMirrorKey = '';
 
     // ===== TYPOGRAPHY =====
     function loadGoogleFontIfNeeded(family) {
@@ -855,8 +863,10 @@
       readMirrorMessage().then(record => {
         if (!record || !record.msg) return;
         const seq = Number(record.seq || (record.msg && record.msg.seq) || 0);
-        if (!force && seq && seq <= lastMirrorSeq) return;
-        lastMirrorSeq = Math.max(lastMirrorSeq, seq);
+        const clientId = record.msg.clientId || 'default';
+        const key = `${clientId}_${seq}`;
+        if (!force && key === lastMirrorKey) return;
+        lastMirrorKey = key;
         handleInboundMessage(record.msg, 'idb');
       }).catch(() => {});
     }
@@ -891,6 +901,23 @@
       connectRelay();
       syncFromMirror(true);
       startMirrorPolling();
+      
+      window.addEventListener('storage', (e) => {
+        if (e.key === 'bsp_sync_message' && e.newValue) {
+          try {
+            const record = JSON.parse(e.newValue);
+            if (record && record.msg) {
+              const seq = Number(record.seq || (record.msg && record.msg.seq) || 0);
+              const clientId = record.msg.clientId || 'default';
+              const key = `${clientId}_${seq}`;
+              if (key === lastMirrorKey) return;
+              lastMirrorKey = key;
+              handleInboundMessage(record.msg, 'localstorage');
+            }
+          } catch (err) {}
+        }
+      });
+
       if (helloTimer) clearInterval(helloTimer);
       helloTimer = setInterval(() => {
         if (hasSynced) {
@@ -916,26 +943,11 @@
       console.log('Bible Song Pro Display initialized');
     }
     
-    let clientSeqMap = {};
-    // Handle incoming messages
-    function acceptSeq(seq, clientId) {
-      if (!seq) return true;
-      const key = clientId || 'default';
-      const last = clientSeqMap[key] || 0;
-      if (seq <= last) return false;
-      clientSeqMap[key] = seq;
-      return true;
-    }
-
+    // Call handleUpdate synchronously — no deferral at all.
+    // OBS CEF throttles both rAF AND setTimeout for all docks,
+    // so any deferral risks the update never rendering.
     function applyUpdateWithThrottle(data) {
-      const now = performance.now();
-      if (now - lastUpdateTime < UPDATE_THROTTLE) {
-        if (rafId) cancelAnimationFrame(rafId);
-        rafId = requestAnimationFrame(() => handleUpdate(data));
-      } else {
-        handleUpdate(data);
-        lastUpdateTime = now;
-      }
+      handleUpdate(data);
     }
 
     function relaySend(msg) {
@@ -1054,20 +1066,16 @@
           }
           case 'CLEAR':
             hasSynced = true;
-            if (acceptSeq(d.seq, d.clientId)) clearDisplay({ fade: d.fade !== false, duration: d.transitionDuration });
+            clearDisplay({ fade: d.fade !== false, duration: d.transitionDuration });
             break;
           case 'UPDATE':
             hasSynced = true;
-            if (!acceptSeq(d.seq, d.clientId)) return;
             applyUpdateWithThrottle(d);
             break;
           case 'SYNC_STATE': {
             const state = d.state || {};
             const payload = state.payload || null;
-            const seq = payload && payload.seq ? payload.seq : d.seq;
-            const clientId = payload && payload.clientId ? payload.clientId : d.clientId;
             hasSynced = true;
-            if (!acceptSeq(seq, clientId)) return;
             if (state.kind === 'clear') {
               clearDisplay();
             } else if (state.kind === 'update' && payload) {
@@ -1605,7 +1613,7 @@
     // ===== ANIMATIONS =====
     function applyTransitionEffects(d, mode, isBible) {
       const t = (d.transitionType || 'fade').toLowerCase();
-      const baseDuration = clamp(Number(d.transitionDuration || 0.8), 0.1, 10);
+      const baseDuration = clamp(Number(d.transitionDuration || 0.8), 0.01, 10);
       const isZoomType = (t === 'zoom-type');
       const usesType = (t === 'type' || isZoomType);
       const zoomDuration = isZoomType ? baseDuration + 0.3 : baseDuration; // slight hold after typing finishes
@@ -1623,7 +1631,7 @@
               transitionState.type = t;
               transitionState.startTime = performance.now();
               transitionState.duration = baseDuration;
-              bgEl.classList.remove('transition-anim', 'anim-fade', 'anim-zoom', 'anim-write');
+              bgEl.classList.remove('transition-anim', 'anim-fade', 'anim-zoom', 'anim-write', 'anim-cut');
               bgEl.style.animation = 'none';
               void bgEl.offsetWidth;
               bgEl.style.animation = '';
@@ -1649,7 +1657,7 @@
       transitionState.startTime = startTime;
       transitionState.duration = zoomDuration;
       const elapsedSec = Math.min(zoomDuration, Math.max(0, (now - startTime) / 1000));
-      const animClass = (t === 'zoom' || isZoomType) ? 'anim-zoom' : (t === 'write' ? 'anim-write' : 'anim-fade');
+      const animClass = (t === 'zoom' || isZoomType) ? 'anim-zoom' : (t === 'write' ? 'anim-write' : (t === 'fakecut' ? 'anim-cut' : 'anim-fade'));
       const targets = [];
       const textTargets = [];
       const bgTargets = [];
@@ -1676,7 +1684,7 @@
       
       const applyAnim = (el) => {
         if (!el) return;
-        el.classList.remove('transition-anim', 'anim-fade', 'anim-zoom', 'anim-write');
+        el.classList.remove('transition-anim', 'anim-fade', 'anim-zoom', 'anim-write', 'anim-cut');
         el.style.animation = 'none';
         void el.offsetWidth; // reflow to restart animation
         el.style.animation = '';
@@ -1690,15 +1698,16 @@
       // Background targets always use fade-only to avoid transform/clip-path displacement
       bgTargets.forEach(el => {
         if (!el) return;
-        el.classList.remove('transition-anim', 'anim-fade', 'anim-zoom', 'anim-write');
+        el.classList.remove('transition-anim', 'anim-fade', 'anim-zoom', 'anim-write', 'anim-cut');
         el.style.animation = 'none';
         void el.offsetWidth;
         el.style.animation = '';
         el.style.animationDuration = `${zoomDuration}s`;
         el.style.animationDelay = `${-elapsedSec}s`;
-        el.classList.add('transition-anim', 'anim-fade');
+        const bgAnimClass = (t === 'fakecut') ? 'anim-cut' : 'anim-fade';
+        el.classList.add('transition-anim', bgAnimClass);
         el.addEventListener('animationend', () => {
-          el.classList.remove('transition-anim', 'anim-fade');
+          el.classList.remove('transition-anim', bgAnimClass);
         }, { once: true });
       });
     }
@@ -1767,36 +1776,16 @@
       handleBackground(d, mode, isBible);
       
       // Apply configured transition (skip for cut)
+      // OBS CEF background throttling completely ignores pure DOM/opacity updates
+      // unless a CSS animation forces the GPU compositor to render a new frame.
+      // For "CUT" transitions, we convert them to a near-instantaneous (10ms) FADE.
+      // This is visually indistinguishable from a cut, but forces the browser to
+      // actually paint the update immediately, preventing the display from freezing.
       if ((d.transitionType || '').toLowerCase() === 'cut') {
-        clearTypeTimers();
-        // Text elements: clear animations AND force opacity:1
-        const textTargets = [
-          elements.txt && elements.txt.querySelector('.text-anim-content'),
-          elements.txt,
-          elements.customMainBar,
-          elements.customRefBox,
-          elements.customVersionBar,
-          elements.customMainText,
-          elements.customRefText,
-          elements.customVersionText
-        ];
-        // Background elements: clear animations ONLY — handleBackground already set their opacity correctly
-        const bgTargets = [elements.bg, elements.ltWrap];
-        const clearAnim = (el, forceOpacity) => {
-          if (!el) return;
-          el.classList.remove('transition-anim', 'anim-fade', 'anim-zoom', 'anim-write');
-          el.style.animation = 'none';
-          void el.offsetWidth;
-          el.style.animation = '';
-          el.style.animationDuration = '';
-          el.style.animationDelay = '';
-          if (forceOpacity) el.style.opacity = '1';
-        };
-        textTargets.forEach(el => clearAnim(el, true));
-        bgTargets.forEach(el => clearAnim(el, false));
-      } else {
-        applyTransitionEffects(d, mode, isBible);
+        d.transitionType = 'fakecut';
+        d.transitionDuration = 0.05;
       }
+      applyTransitionEffects(d, mode, isBible);
 
       // Log applied font info for diagnostics
       try {

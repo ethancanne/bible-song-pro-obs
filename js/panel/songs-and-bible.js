@@ -1110,14 +1110,7 @@
             if (verseNum) setBibleGroupAnchor(verseNum, currentItem);
           }
           updateActiveButtonInPlace(idx, isBible, bibleVersionIndex);
-          if (pendingVerseProjectFrame) {
-            cancelAnimationFrame(pendingVerseProjectFrame);
-            pendingVerseProjectFrame = 0;
-          }
-          pendingVerseProjectFrame = requestAnimationFrame(() => {
-            pendingVerseProjectFrame = 0;
-            projectLive(true);
-          });
+          projectLive(true);
         };
 
         row.appendChild(btn);
